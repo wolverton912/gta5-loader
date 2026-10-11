@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard: COI Tester & Local GTA V Loader</title>
+    <style>
+        :root {
+            --bg-main: #121214;
+            --bg-card: #1a1a1e;
+            --accent: #34d399;
+            --accent-hover: #059669;
+            --text: #e4e4e7;
+            --text-muted: #a1a1aa;
+            --border: #2d2d34;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--bg-main);
+            color: var(--text);
+            margin: 0;
+            padding: 20px;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 15px;
+            margin-bottom: 25px;
+        }
+
+        h2, h3 { margin-top: 0; }
+
+        .container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        @media (max-width: 900px) {
+            .container { grid-template-columns: 1fr; }
+        }
+
+        .panel {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: var(--text-muted);
+        }
+
+        input[type="url"], input[type="text"] {
+            width: 100%;
+            padding: 10px;
+            background: #0f0f11;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            color: #fff;
+            box-sizing: border-box;
+            margin-bottom: 15px;
+        }
+
+        .file-dropzone {
+            border: 2px dashed var(--border);
+            padding: 25px 20px;
+            text-align: center;
+            border-radius: 6px;
+            background: #0f0f11;
+            margin-bottom: 15px;
+            cursor: pointer;
+            transition: border-color 0.2s;
+        }
+
+        .file-dropzone:hover { border-color: var(--accent); }
+        .file-input-hidden { display: none; }
+
+        button {
+            background-color: var(--accent);
+            color: #000;
+            font-weight: bold;
+            border: none;
+            padding: 12px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            width: 100%;
+            transition: background 0.2s;
+        }
+
+        button:hover { background-color: var(--accent-hover); }
+
+        pre {
+            background: #0f0f11;
+            padding: 15px;
+            border-radius: 4px;
+            border: 1px solid var(--border);
+            overflow-x: auto;
+            max-height: 200px;
+            font-family: monospace;
+            font-size: 13px;
+        }
+
+        .port-display {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
+
+        #port-container {
+            flex-grow: 1;
+            background: #000;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            min-height: 400px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+            overflow: hidden;
+            margin-top: 15px;
+        }
+
+        #game-frame {
+            display: none;
+            width: 100%;
+            height: 100%;
+            border: none;
+            background: #000;
+        }
+
+        .status-msg {
+            color: var(--text-muted);
+            text-align: center;
+            padding: 20px;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h2>🛠️ Operations Dashboard</h2>
+        <div>GitHub Pages Sandbox</div>
+    </header>
+
+    <div class="container">
+        
+        <!-- PANEL 1: COI SERVICE TESTING -->
+        <section class="panel">
+            <h3>COI Service Testing</h3>
+            <label for="coi-url">Service Endpoint URL:</label>
+            <input type="url" id="coi-url" value="https://example.com">
+            
+            <label for="coi-payload">Payload (JSON):</label>
+            <input type="text" id="coi-payload" value='{"testMode": true, "clientId": "gh-pages"}'>
+            
+            <button onclick="executeCoiTest()">Run Service Test</button>
+            
+            <h4>Response Output:</h4>
+            <pre id="coi-output">Awaiting test execution...</pre>
+        </section>
+
+        <!-- PANEL 2: MATCHED GTA V DIRECTORY MOUNT ENGINE -->
+        <section class="panel port-display">
+            <h3>GTA V Local Game Loader</h3>
+            <p style="font-size: 13px; color: var(--text-muted); margin-top: -10px;">
+                Select your root folder containing <code>serve_local.py</code> and the <code>mirror/</code> structure.
+            </p>
+            
+            <div class="file-dropzone" onclick="document.getElementById('folder-picker').click()">
+                <span id="dropzone-text">📁 Click to select Root Game Directory</span>
+                <input type="file" id="folder-picker" class="file-input-hidden" webkitdirectory directory multiple onchange="processStructure(this.files)">
+            </div>
+            
+            <button id="launch-btn" onclick="bootMirroredPort()" disabled style="opacity: 0.5; cursor: not-allowed;">
+                Select root folder first
+            </button>
+            
+            <div id="port-container">
+                <div id="boot-status" class="status-msg">Sandbox offline. Awaiting directory processing pipeline...</div>
+                <iframe id="game-frame" sandbox="allow-scripts allow-same-origin allow-pointer-lock"></iframe>
+            </div>
+        </section>
+
+    </div>
+
+    <script>
+        let virtualFiles = {};
+        let targetIndexFile = null;
+
+        // ==========================================
+        // 1. COI SERVICE TESTING LOGIC
+        // ==========================================
+        async function executeCoiTest() {
+            const url = document.getElementById('coi-url').value;
+            const payloadRaw = document.getElementById('coi-payload').value;
+            const output = document.getElementById('coi-output');
+            
+            output.textContent = "Connecting to endpoint...";
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: payloadRaw
+                });
+                const data = await response.json();
+                output.textContent = JSON.stringify(data, null, 2);
+            } catch (err) {
+                output.textContent = `Execution Error: ${err.message}\n\n[Note: Verify your target server profile allows CORS transactions originating from this GitHub Pages space].`;
+            }
+        }
+
+        // ==========================================
+        // 2. FILE STRATIFICATION ENGINE FOR CUSTOM TREE
+        // ==========================================
+        function processStructure(files) {
+            virtualFiles = {};
+            targetIndexFile = null;
+
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                const fullPath = file.webkitRelativePath;
+                
+                if (fullPath.includes('mirror/://playgta5.com')) {
+                    const normalizedKey = fullPath.substring(fullPath.indexOf('mirror/://playgta5.com') + 'mirror/://playgta5.com'.length);
+                    virtualFiles[normalizedKey] = file;
+
+                    if (normalizedKey === 'index.html') {
+                        targetIndexFile = file;
+                    }
+                }
+            }
+
+            const textSpan = document.getElementById('dropzone-text');
+            const launchBtn = document.getElementById('launch-btn');
+            const status = document.getElementById('boot-status');
+
+            if (targetIndexFile) {
+                textSpan.innerText = `✅ Found Mirrored App Bundle!`;
+                status.innerHTML = `Structure validated.<br><small style="color: var(--accent);">Ready to mount local asset sandboxes.</small>`;
+                launchBtn.disabled = false;
+                launchBtn.style.opacity = "1";
+                launchBtn.style.cursor = "pointer";
+                launchBtn.innerText = "Initialize Sandbox Environment";
+            } else {
+                textSpan.innerText = "❌ Mirror path mismatch";
+                status.innerHTML = `<span style="color: #ef4444;">Missing <code>mirror/://playgta5.comindex.html</code> inside your selection. Ensure you select the parent folder holding your python script and the mirror folder.</span>`;
+                launchBtn.disabled = true;
+                launchBtn.style.opacity = "0.5";
+            }
+        }
+
+        async function bootMirroredPort() {
+            const status = document.getElementById('boot-status');
+            const frame = document.getElementById('game-frame');
+            
+            status.innerHTML = "🔧 Generating virtual memory maps and compiling source hooks...";
+            
+            try {
+                let htmlContent = await targetIndexFile.text();
+
+                // Build Blob URLs dynamically inside the context rather than printing a static string array
+                const objectUrlsMap = {};
+                for (const key in virtualFiles) {
+                    objectUrlsMap[key] = URL.createObjectURL(virtualFiles[key]);
+                }
+
+                // Inject a clean network-level runtime interceptor script directly into the iframe target
+Use code with caution.
+window.addEventListener('message', function handleFrameRequests(e) {
+// Allows handling specialized background worker proxy requests if required by Emscripten threads
+});
+const patchInterceptor = `
+
+(function() {
+const localVirtualFiles = ${JSON.stringify(objectUrlsMap)};
+const originalFetch = window.fetch;
+window.fetch = async function(input, init) {
+let url = typeof input === 'string' ? input : input.url;
+url = url.replace(window.location.origin + '/', '').replace('./', '');
+if (localVirtualFiles[url]) {
+return originalFetch(localVirtualFiles[url], init);
+}
+return originalFetch(input, init);
+};
+window.Module = window.Module || {};
+const oldLocate = window.Module.locateFile;
+window.Module.locateFile = function(path) {
+const cleanPath = path.replace('./', '');
+if (localVirtualFiles[cleanPath]) return localVirtualFiles[cleanPath];
+if (oldLocate) return oldLocate(path);
+return path;
+};
+})();
+</script>
+`;
+htmlContent = htmlContent.replace('', '' + patchInterceptor);
+const finalBlob = new Blob([htmlContent], { type: 'text/html' });
+frame.src = URL.createObjectURL(finalBlob);
+status.style.display = "none";
+frame.style.display = "block";
+} catch(e) {
+status.innerHTML = <span style="color: #ef4444;">❌ Sandbox Initialization Failed: ${e.message}</span>;
+}
+}
